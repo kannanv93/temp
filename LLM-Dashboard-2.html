@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Model Monitoring Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        }
+        .metric-card {
+            transition: all 0.3s ease;
+        }
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .sidebar-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .heatmap-cell {
+            transition: all 0.2s ease;
+        }
+        .heatmap-cell:hover {
+            transform: scale(1.1);
+        }
+        #umap-3d {
+            width: 100%;
+            height: 500px;
+        }
+        .trace-log:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        .attention-cell {
+            transition: all 0.2s ease;
+        }
+        .attention-cell:hover {
+            transform: scale(1.2);
+        }
+        .notification-badge {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 82, 82, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); }
+        }
+    </style>
+</head>
+<body class="gradient-bg text-white min-h-screen">
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <div class="w-64 bg-gray-900 p-4 flex flex-col">
+            <div class="flex items-center mb-8">
+                <i class="fas fa-brain text-2xl text-purple-400 mr-3"></i>
+                <h1 class="text-xl font-bold">Solytics Partners</h1>
+            </div>
+            
+            <div class="mb-8">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-sm uppercase tracking-wider text-gray-400">Models</h2>
+                    <button class="text-gray-400 hover:text-white">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+                <div class="space-y-2">
+                    <div class="sidebar-item flex items-center p-2 rounded cursor-pointer bg-gray-800">
+                        <div class="w-3 h-3 rounded-full bg-green-400 mr-3"></div>
+                        <span>GPT-4-Production</span>
+                    </div>
+                    <div class="sidebar-item flex items-center p-2 rounded cursor-pointer">
+                        <div class="w-3 h-3 rounded-full bg-yellow-400 mr-3"></div>
+                        <span>GPT-4-Staging</span>
+                    </div>
+                    <div class="sidebar-item flex items-center p-2 rounded cursor-pointer">
+                        <div class="w-3 h-3 rounded-full bg-blue-400 mr-3"></div>
+                        <span>Claude-2</span>
+                    </div>
+                    <div class="sidebar-item flex items-center p-2 rounded cursor-pointer">
+                        <div class="w-3 h-3 rounded-full bg-purple-400 mr-3"></div>
+                        <span>Llama-2-70B</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-8">
+                <h2 class="text-sm uppercase tracking-wider text-gray-400 mb-4">Navigation</h2>
+                <div class="space-y-2">
+                    <div class="sidebar-item flex items-center p-2 rounded cursor-pointer bg-purple-900">
+                        <i class="fas fa-tachometer-alt mr-3"></i>
+                        <span>Dashboard</span>
+                    </div>
+                    <div class="sidebar-item flex items-center p-2 rounded cursor-pointer">
+                        <i class="fas fa-chart-line mr-3"></i>
+                        <span>Performance</span>
+                    </div>
+                    <div class="sidebar-item flex items-center p-2 rounded cursor-pointer">
+                        <i class="fas fa-search mr-3"></i>
+                        <span>Trace Analyzer</span>
+                    </div>
+                    <div class="sidebar-item flex items-center p-2 rounded cursor-pointer">
+                        <i class="fas fa-project-diagram mr-3"></i>
+                        <span>3D Embeddings</span>
+                    </div>
+                    <div class="sidebar-item flex items-center p-2 rounded cursor-pointer">
+                        <i class="fas fa-bell mr-3"></i>
+                        <span class="flex-1">Alerts</span>
+                        <span class="bg-red-500 text-white text-xs px-2 py-1 rounded-full">3</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-auto">
+                <div class="p-4 bg-gray-800 rounded-lg">
+                    <div class="flex items-center mb-2">
+                        <div class="w-3 h-3 rounded-full bg-green-400 mr-2"></div>
+                        <span class="text-sm">System Status</span>
+                    </div>
+                    <div class="text-xs text-gray-400 mb-2">Last updated: <span id="last-updated">Just now</span></div>
+                    <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                        <div class="h-full bg-green-400 rounded-full" style="width: 92%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="flex-1 overflow-y-auto p-8">
+            <div class="flex justify-between items-center mb-8">
+                <h1 class="text-3xl font-bold">LLM Monitoring Dashboard</h1>
+                <div class="flex items-center space-x-4">
+                    <div class="relative">
+                        <input type="text" placeholder="Search..." class="bg-gray-700 px-4 py-2 rounded-lg pl-10 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                    </div>
+                    <button class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg flex items-center">
+                        <i class="fas fa-cog mr-2"></i>
+                        <span>Settings</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Metrics Overview -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                <div class="metric-card bg-gray-800 p-4 rounded-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-gray-400 text-sm">Response Latency</div>
+                            <div class="text-2xl font-bold mt-1">342ms</div>
+                            <div class="text-green-400 text-sm flex items-center mt-1">
+                                <i class="fas fa-arrow-down mr-1"></i>
+                                <span>12% from last hour</span>
+                            </div>
+                        </div>
+                        <div class="bg-purple-500 bg-opacity-20 p-2 rounded-lg">
+                            <i class="fas fa-clock text-purple-400"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 h-20">
+                        <canvas id="latencyChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="metric-card bg-gray-800 p-4 rounded-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-gray-400 text-sm">Token Usage</div>
+                            <div class="text-2xl font-bold mt-1">1,284</div>
+                            <div class="text-red-400 text-sm flex items-center mt-1">
+                                <i class="fas fa-arrow-up mr-1"></i>
+                                <span>8% from last hour</span>
+                            </div>
+                        </div>
+                        <div class="bg-blue-500 bg-opacity-20 p-2 rounded-lg">
+                            <i class="fas fa-coins text-blue-400"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 h-20">
+                        <canvas id="tokenChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="metric-card bg-gray-800 p-4 rounded-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-gray-400 text-sm">Perplexity</div>
+                            <div class="text-2xl font-bold mt-1">12.4</div>
+                            <div class="text-green-400 text-sm flex items-center mt-1">
+                                <i class="fas fa-arrow-down mr-1"></i>
+                                <span>5% from last hour</span>
+                            </div>
+                        </div>
+                        <div class="bg-green-500 bg-opacity-20 p-2 rounded-lg">
+                            <i class="fas fa-chart-bar text-green-400"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 h-20">
+                        <canvas id="perplexityChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="metric-card bg-gray-800 p-4 rounded-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-gray-400 text-sm">Accuracy</div>
+                            <div class="text-2xl font-bold mt-1">89.2%</div>
+                            <div class="text-yellow-400 text-sm flex items-center mt-1">
+                                <i class="fas fa-minus mr-1"></i>
+                                <span>0.3% from last hour</span>
+                            </div>
+                        </div>
+                        <div class="bg-yellow-500 bg-opacity-20 p-2 rounded-lg">
+                            <i class="fas fa-check-circle text-yellow-400"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 h-20">
+                        <canvas id="accuracyChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="metric-card bg-gray-800 p-4 rounded-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-gray-400 text-sm">Bias Drift</div>
+                            <div class="text-2xl font-bold mt-1">0.42</div>
+                            <div class="text-red-400 text-sm flex items-center mt-1">
+                                <i class="fas fa-arrow-up mr-1"></i>
+                                <span>15% from last hour</span>
+                            </div>
+                        </div>
+                        <div class="bg-red-500 bg-opacity-20 p-2 rounded-lg">
+                            <i class="fas fa-exclamation-triangle text-red-400"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 h-20">
+                        <canvas id="biasChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Performance Charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <div class="bg-gray-800 p-6 rounded-lg">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-bold">Response Latency Over Time</h2>
+                        <div class="flex space-x-2">
+                            <button class="bg-gray-700 px-3 py-1 rounded-lg text-sm">1h</button>
+                            <button class="bg-gray-700 px-3 py-1 rounded-lg text-sm">6h</button>
+                            <button class="bg-purple-600 px-3 py-1 rounded-lg text-sm">24h</button>
+                            <button class="bg-gray-700 px-3 py-1 rounded-lg text-sm">7d</button>
+                        </div>
+                    </div>
+                    <div class="h-80">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-800 p-6 rounded-lg">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-bold">Model Comparison</h2>
+                        <div class="flex items-center space-x-2">
+                            <select class="bg-gray-700 px-3 py-1 rounded-lg text-sm">
+                                <option>Latency</option>
+                                <option>Accuracy</option>
+                                <option>Token Usage</option>
+                                <option>Perplexity</option>
+                            </select>
+                            <button class="bg-purple-600 px-3 py-1 rounded-lg text-sm">
+                                <i class="fas fa-sync-alt mr-1"></i>
+                                <span>Compare</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="h-80">
+                        <canvas id="comparisonChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Heatmap Section -->
+            <div class="bg-gray-800 p-6 rounded-lg mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Token Usage Heatmap</h2>
+                    <div class="flex items-center space-x-2">
+                        <button class="bg-gray-700 px-3 py-1 rounded-lg text-sm">Input</button>
+                        <button class="bg-purple-600 px-3 py-1 rounded-lg text-sm">Output</button>
+                        <button class="bg-gray-700 px-3 py-1 rounded-lg text-sm">Total</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <div class="inline-block min-w-full">
+                        <div class="grid grid-cols-12 gap-1">
+                            <!-- Header Row -->
+                            <div class="col-span-2 text-sm text-gray-400 font-medium p-2">Endpoint</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">0-100</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">100-200</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">200-300</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">300-400</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">400-500</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">500-600</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">600-700</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">700-800</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">800-900</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">900-1000</div>
+                            <div class="text-sm text-gray-400 font-medium p-2 text-center">1000+</div>
+                            
+                            <!-- Data Rows -->
+                            <div class="col-span-2 text-sm p-2">/chat/completions</div>
+                            <div class="heatmap-cell bg-green-900 p-2 text-center text-xs">42</div>
+                            <div class="heatmap-cell bg-green-800 p-2 text-center text-xs">128</div>
+                            <div class="heatmap-cell bg-green-700 p-2 text-center text-xs">245</div>
+                            <div class="heatmap-cell bg-green-600 p-2 text-center text-xs">312</div>
+                            <div class="heatmap-cell bg-yellow-600 p-2 text-center text-xs">87</div>
+                            <div class="heatmap-cell bg-yellow-500 p-2 text-center text-xs">45</div>
+                            <div class="heatmap-cell bg-orange-500 p-2 text-center text-xs">22</div>
+                            <div class="heatmap-cell bg-orange-400 p-2 text-center text-xs">12</div>
+                            <div class="heatmap-cell bg-red-500 p-2 text-center text-xs">8</div>
+                            <div class="heatmap-cell bg-red-400 p-2 text-center text-xs">3</div>
+                            <div class="heatmap-cell bg-red-300 p-2 text-center text-xs">1</div>
+                            
+                            <div class="col-span-2 text-sm p-2">/embeddings</div>
+                            <div class="heatmap-cell bg-green-900 p-2 text-center text-xs">312</div>
+                            <div class="heatmap-cell bg-green-800 p-2 text-center text-xs">245</div>
+                            <div class="heatmap-cell bg-green-700 p-2 text-center text-xs">128</div>
+                            <div class="heatmap-cell bg-green-600 p-2 text-center text-xs">42</div>
+                            <div class="heatmap-cell bg-yellow-600 p-2 text-center text-xs">12</div>
+                            <div class="heatmap-cell bg-yellow-500 p-2 text-center text-xs">5</div>
+                            <div class="heatmap-cell bg-orange-500 p-2 text-center text-xs">2</div>
+                            <div class="heatmap-cell bg-orange-400 p-2 text-center text-xs">1</div>
+                            <div class="heatmap-cell bg-red-500 p-2 text-center text-xs">0</div>
+                            <div class="heatmap-cell bg-red-400 p-2 text-center text-xs">0</div>
+                            <div class="heatmap-cell bg-red-300 p-2 text-center text-xs">0</div>
+                            
+                            <div class="col-span-2 text-sm p-2">/moderations</div>
+                            <div class="heatmap-cell bg-green-900 p-2 text-center text-xs">512</div>
+                            <div class="heatmap-cell bg-green-800 p-2 text-center text-xs">124</div>
+                            <div class="heatmap-cell bg-green-700 p-2 text-center text-xs">32</div>
+                            <div class="heatmap-cell bg-green-600 p-2 text-center text-xs">8</div>
+                            <div class="heatmap-cell bg-yellow-600 p-2 text-center text-xs">2</div>
+                            <div class="heatmap-cell bg-yellow-500 p-2 text-center text-xs">1</div>
+                            <div class="heatmap-cell bg-orange-500 p-2 text-center text-xs">0</div>
+                            <div class="heatmap-cell bg-orange-400 p-2 text-center text-xs">0</div>
+                            <div class="heatmap-cell bg-red-500 p-2 text-center text-xs">0</div>
+                            <div class="heatmap-cell bg-red-400 p-2 text-center text-xs">0</div>
+                            <div class="heatmap-cell bg-red-300 p-2 text-center text-xs">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Trace Analyzer -->
+            <div class="bg-gray-800 p-6 rounded-lg mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Trace Analyzer</h2>
+                    <div class="flex items-center space-x-2">
+                        <input type="text" placeholder="Filter traces..." class="bg-gray-700 px-3 py-1 rounded-lg text-sm">
+                        <select class="bg-gray-700 px-3 py-1 rounded-lg text-sm">
+                            <option>All</option>
+                            <option>Errors</option>
+                            <option>High Latency</option>
+                            <option>High Token Usage</option>
+                        </select>
+                        <button class="bg-purple-600 px-3 py-1 rounded-lg text-sm">
+                            <i class="fas fa-filter mr-1"></i>
+                            <span>Apply</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="space-y-4">
+                    <!-- Trace Item -->
+                    <div class="trace-log bg-gray-700 p-4 rounded-lg cursor-pointer">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center">
+                                <div class="w-2 h-2 rounded-full bg-green-400 mr-2"></div>
+                                <span class="text-sm font-medium">POST /chat/completions</span>
+                                <span class="text-xs text-gray-400 ml-2">2.3s ago</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs bg-blue-500 bg-opacity-20 text-blue-400 px-2 py-1 rounded">342ms</span>
+                                <span class="text-xs bg-purple-500 bg-opacity-20 text-purple-400 px-2 py-1 rounded">128 tokens</span>
+                            </div>
+                        </div>
+                        <div class="text-sm mb-2">
+                            <span class="text-gray-400">Prompt:</span> 
+                            <span class="ml-2">"Explain quantum computing in simple terms"</span>
+                        </div>
+                        <div class="text-sm">
+                            <span class="text-gray-400">Response:</span> 
+                            <span class="ml-2">"Quantum computing uses qubits which can be in multiple states at once, unlike classical bits..."</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Trace Item with Error -->
+                    <div class="trace-log bg-gray-700 p-4 rounded-lg cursor-pointer border-l-4 border-red-500">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center">
+                                <div class="w-2 h-2 rounded-full bg-red-400 mr-2"></div>
+                                <span class="text-sm font-medium">POST /chat/completions</span>
+                                <span class="text-xs text-gray-400 ml-2">5.1s ago</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs bg-red-500 bg-opacity-20 text-red-400 px-2 py-1 rounded">1.2s</span>
+                                <span class="text-xs bg-purple-500 bg-opacity-20 text-purple-400 px-2 py-1 rounded">Error</span>
+                            </div>
+                        </div>
+                        <div class="text-sm mb-2">
+                            <span class="text-gray-400">Prompt:</span> 
+                            <span class="ml-2">"Generate a Python script for image classification"</span>
+                        </div>
+                        <div class="text-sm text-red-400">
+                            <span class="text-gray-400">Error:</span> 
+                            <span class="ml-2">"Timeout: Model took too long to respond"</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Trace Item with High Latency -->
+                    <div class="trace-log bg-gray-700 p-4 rounded-lg cursor-pointer border-l-4 border-yellow-500">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center">
+                                <div class="w-2 h-2 rounded-full bg-yellow-400 mr-2"></div>
+                                <span class="text-sm font-medium">POST /chat/completions</span>
+                                <span class="text-xs text-gray-400 ml-2">12.7s ago</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs bg-yellow-500 bg-opacity-20 text-yellow-400 px-2 py-1 rounded">872ms</span>
+                                <span class="text-xs bg-purple-500 bg-opacity-20 text-purple-400 px-2 py-1 rounded">512 tokens</span>
+                            </div>
+                        </div>
+                        <div class="text-sm mb-2">
+                            <span class="text-gray-400">Prompt:</span> 
+                            <span class="ml-2">"Write a detailed analysis of the economic impacts of COVID-19 on global supply chains"</span>
+                        </div>
+                        <div class="text-sm">
+                            <span class="text-gray-400">Response:</span> 
+                            <span class="ml-2">"The COVID-19 pandemic caused unprecedented disruptions to global supply chains, with..."</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4 flex justify-center">
+                    <button class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg">
+                        <i class="fas fa-history mr-2"></i>
+                        <span>Load More Traces</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 3D UMAP Embedding Visualizer -->
+            <div class="bg-gray-800 p-6 rounded-lg mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">3D UMAP Embedding Visualizer</h2>
+                    <div class="flex items-center space-x-2">
+                        <select class="bg-gray-700 px-3 py-1 rounded-lg text-sm">
+                            <option>Color by Quality</option>
+                            <option>Color by Sentiment</option>
+                            <option>Color by Confidence</option>
+                            <option>Color by Model</option>
+                        </select>
+                        <button class="bg-purple-600 px-3 py-1 rounded-lg text-sm">
+                            <i class="fas fa-sync-alt mr-1"></i>
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="umap-3d"></div>
+                
+                <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium">Cluster 1</span>
+                            <span class="text-xs bg-green-500 bg-opacity-20 text-green-400 px-2 py-1 rounded">High Quality</span>
+                        </div>
+                        <div class="text-xs text-gray-400">Responses with high accuracy and coherence</div>
+                        <div class="mt-2 text-sm">
+                            <span class="text-gray-400">Count:</span> 
+                            <span class="ml-2">1,284</span>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium">Cluster 2</span>
+                            <span class="text-xs bg-yellow-500 bg-opacity-20 text-yellow-400 px-2 py-1 rounded">Medium Quality</span>
+                        </div>
+                        <div class="text-xs text-gray-400">Responses with some inaccuracies or verbosity</div>
+                        <div class="mt-2 text-sm">
+                            <span class="text-gray-400">Count:</span> 
+                            <span class="ml-2">428</span>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-medium">Cluster 3</span>
+                            <span class="text-xs bg-red-500 bg-opacity-20 text-red-400 px-2 py-1 rounded">Low Quality</span>
+                        </div>
+                        <div class="text-xs text-gray-400">Responses with hallucinations or errors</div>
+                        <div class="mt-2 text-sm">
+                            <span class="text-gray-400">Count:</span> 
+                            <span class="ml-2">87</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Attention Visualization -->
+            <div class="bg-gray-800 p-6 rounded-lg mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Attention Distribution</h2>
+                    <div class="flex items-center space-x-2">
+                        <select class="bg-gray-700 px-3 py-1 rounded-lg text-sm">
+                            <option>Head 1</option>
+                            <option>Head 2</option>
+                            <option>Head 3</option>
+                            <option>Head 4</option>
+                        </select>
+                        <button class="bg-purple-600 px-3 py-1 rounded-lg text-sm">
+                            <i class="fas fa-layer-group mr-1"></i>
+                            <span>Layer 12</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <div class="inline-block min-w-full">
+                        <div class="grid grid-cols-12 gap-1">
+                            <!-- Header Row -->
+                            <div class="col-span-1"></div>
+                            <div class="text-xs text-gray-400 p-1 text-center">The</div>
+                            <div class="text-xs text-gray-400 p-1 text-center">quick</div>
+                            <div class="text-xs text-gray-400 p-1 text-center">brown</div>
+                            <div class="text-xs text-gray-400 p-1 text-center">fox</div>
+                            <div class="text-xs text-gray-400 p-1 text-center">jumps</div>
+                            <div class="text-xs text-gray-400 p-1 text-center">over</div>
+                            <div class="text-xs text-gray-400 p-1 text-center">the</div>
+                            <div class="text-xs text-gray-400 p-1 text-center">lazy</div>
+                            <div class="text-xs text-gray-400 p-1 text-center">dog</div>
+                            <div class="text-xs text-gray-400 p-1 text-center">.</div>
+                            
+                            <!-- Data Rows -->
+                            <div class="text-xs text-gray-400 p-1">The</div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            
+                            <div class="text-xs text-gray-400 p-1">quick</div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            
+                            <div class="text-xs text-gray-400 p-1">brown</div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            
+                            <div class="text-xs text-gray-400 p-1">fox</div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            
+                            <div class="text-xs text-gray-400 p-1">jumps</div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            
+                            <div class="text-xs text-gray-400 p-1">over</div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            
+                            <div class="text-xs text-gray-400 p-1">the</div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            
+                            <div class="text-xs text-gray-400 p-1">lazy</div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            
+                            <div class="text-xs text-gray-400 p-1">dog</div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            
+                            <div class="text-xs text-gray-400 p-1">.</div>
+                            <div class="attention-cell bg-blue-50 p-1"></div>
+                            <div class="attention-cell bg-blue-100 p-1"></div>
+                            <div class="attention-cell bg-blue-200 p-1"></div>
+                            <div class="attention-cell bg-blue-300 p-1"></div>
+                            <div class="attention-cell bg-blue-400 p-1"></div>
+                            <div class="attention-cell bg-blue-500 p-1"></div>
+                            <div class="attention-cell bg-blue-600 p-1"></div>
+                            <div class="attention-cell bg-blue-700 p-1"></div>
+                            <div class="attention-cell bg-blue-800 p-1"></div>
+                            <div class="attention-cell bg-blue-900 p-1"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-4 flex justify-center">
+                    <div class="flex items-center space-x-4">
+                        <div class="flex items-center">
+                            <div class="w-4 h-4 bg-blue-900 mr-2"></div>
+                            <span class="text-xs">Low Attention</span>
+                        </div>
+                        <div class="flex items-center">
+                            <div class="w-4 h-4 bg-blue-600 mr-2"></div>
+                            <span class="text-xs">Medium Attention</span>
+                        </div>
+                        <div class="flex items-center">
+                            <div class="w-4 h-4 bg-blue-300 mr-2"></div>
+                            <span class="text-xs">High Attention</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Alerting System -->
+            <div class="bg-gray-800 p-6 rounded-lg">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Alerting & Notification System</h2>
+                    <div class="flex items-center space-x-2">
+                        <button class="bg-gray-700 px-3 py-1 rounded-lg text-sm">All</button>
+                        <button class="bg-red-600 px-3 py-1 rounded-lg text-sm">Critical</button>
+                        <button class="bg-yellow-600 px-3 py-1 rounded-lg text-sm">Warning</button>
+                        <button class="bg-blue-600 px-3 py-1 rounded-lg text-sm">Info</button>
+                    </div>
+                </div>
+                
+                <div class="space-y-4">
+                    <!-- Alert Item - Critical -->
+                    <div class="bg-gray-700 p-4 rounded-lg border-l-4 border-red-500">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center">
+                                <i class="fas fa-exclamation-circle text-red-400 mr-2"></i>
+                                <span class="font-medium">High Latency Spike Detected</span>
+                            </div>
+                            <span class="text-xs text-gray-400">2 minutes ago</span>
+                        </div>
+                        <div class="text-sm mb-2">
+                            <span class="text-gray-400">Description:</span> 
+                            <span class="ml-2">Average response latency exceeded 1.5s (threshold: 500ms)</span>
+                        </div>
+                        <div class="text-sm mb-2">
+                            <span class="text-gray-400">Affected:</span> 
+                            <span class="ml-2">/chat/completions endpoint</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <div class="flex space-x-2">
+                                <button class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-lg text-xs">
+                                    <i class="fas fa-bell-slash mr-1"></i>
+                                    <span>Mute</span>
+                                </button>
+                                <button class="bg-gray-600 hover:bg-gray-500 px-3 py-1 rounded-lg text-xs">
+                                    <i class="fas fa-check mr-1"></i>
+                                    <span>Resolve</span>
+                                </button>
+                            </div>
+                            <div class="text-xs">
+                                <span class="text-gray-400">Sent to:</span> 
+                                <span class="ml-1">Email, Slack #alerts</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Alert Item - Warning -->
+                    <div class="bg-gray-700 p-4 rounded-lg border-l-4 border-yellow-500">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center">
+                                <i class="fas fa-exclamation-triangle text-yellow-400 mr-2"></i>
+                                <span class="font-medium">Bias Drift Detected</span>
+                            </div>
+                            <span class="text-xs text-gray-400">15 minutes ago</span>
+                        </div>
+                        <div class="text-sm mb-2">
+                            <span class="text-gray-400">Description:</span> 
+                            <span class="ml-2">Bias score increased by 18% in last hour (threshold: 10%)</span>
+                        </div>
+                        <div class="text-sm mb-2">
+                            <span class="text-gray-400">Affected:</span> 
+                            <span class="ml-2">Gender-related prompts</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <div class="flex space-x-2">
+                                <button class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded-lg text-xs">
+                                    <i class="fas fa-bell-slash mr-1"></i>
+                                    <span>Mute</span>
+                                </button>
+                                <button class="bg-gray-600 hover:bg-gray-500 px-3 py-1 rounded-lg text-xs">
+                                    <i class="fas fa-check mr-1"></i>
+                                    <span>Resolve</span>
+                                </button>
+                            </div>
+                            <div class="text-xs">
+                                <span class="text-gray-400">Sent to:</span> 
+                                <span class="ml-1">Email, Slack #alerts</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Alert Item - Info -->
+                    <div class="bg-gray-700 p-4 rounded-lg border-l-4 border-blue-500">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center">
+                                <i class="fas fa-info-circle text-blue-400 mr-2"></i>
+                                <span class="font-medium">New Model Version Deployed</span>
+                            </div>
+                            <span class="text-xs text-gray-400">1 hour ago</span>
+                        </div>
+                        <div class="text-sm mb-2">
+                            <span class="text-gray-400">Description:</span> 
+                            <span class="ml-2">GPT-4-Production updated to version 4.1.2</span>
+                        </div>
+                        <div class="text-sm mb-2">
+                            <span class="text-gray-400">Changes:</span> 
+                            <span class="ml-2">Improved reasoning capabilities, reduced bias</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <div class="flex space-x-2">
+                                <button class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-lg text-xs">
+                                    <i class="fas fa-check mr-1"></i>
+                                    <span>Acknowledge</span>
+                                </button>
+                            </div>
+                            <div class="text-xs">
+                                <span class="text-gray-400">Sent to:</span> 
+                                <span class="ml-1">Email, Slack #deployments</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-6">
+                    <h3 class="text-lg font-medium mb-4">Alert Configuration</h3>
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Latency Threshold (ms)</label>
+                                <input type="number" value="500" class="w-full bg-gray-800 px-3 py-2 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Bias Drift Threshold (%)</label>
+                                <input type="number" value="10" class="w-full bg-gray-800 px-3 py-2 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Token Usage Threshold</label>
+                                <input type="number" value="1000" class="w-full bg-gray-800 px-3 py-2 rounded-lg">
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <label class="block text-sm font-medium mb-1">Notification Channels</label>
+                            <div class="flex flex-wrap gap-2">
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" checked class="form-checkbox bg-gray-800 text-purple-500">
+                                    <span class="ml-2 text-sm">Email</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" checked class="form-checkbox bg-gray-800 text-purple-500">
+                                    <span class="ml-2 text-sm">Slack</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" class="form-checkbox bg-gray-800 text-purple-500">
+                                    <span class="ml-2 text-sm">SMS</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" class="form-checkbox bg-gray-800 text-purple-500">
+                                    <span class="ml-2 text-sm">Webhook</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex justify-end">
+                            <button class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg">
+                                <i class="fas fa-save mr-2"></i>
+                                <span>Save Configuration</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Small metric charts
+        const createSmallChart = (id, color, data) => {
+            const ctx = document.getElementById(id).getContext('2d');
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 12}, (_, i) => ''),
+                    datasets: [{
+                        data: data,
+                        borderColor: color,
+                        borderWidth: 2,
+                        fill: false,
+                        pointRadius: 0,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: false
+                        },
+                        y: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        };
+
+        // Performance chart
+        const performanceCtx = document.getElementById('performanceChart').getContext('2d');
+        const performanceChart = new Chart(performanceCtx, {
+            type: 'line',
+            data: {
+                labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+                datasets: [
+                    {
+                        label: 'Latency (ms)',
+                        data: Array.from({length: 24}, (_, i) => Math.floor(Math.random() * 800) + 200),
+                        borderColor: '#8b5cf6',
+                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Token Usage',
+                        data: Array.from({length: 24}, (_, i) => Math.floor(Math.random() * 1200) + 200),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: '#e5e7eb'
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#9ca3af'
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#9ca3af'
+                        }
+                    },
+                    y1: {
+                        position: 'right',
+                        grid: {
+                            drawOnChartArea: false,
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#9ca3af'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Comparison chart
+        const comparisonCtx = document.getElementById('comparisonChart').getContext('2d');
+        const comparisonChart = new Chart(comparisonCtx, {
+            type: 'bar',
+            data: {
+                labels: ['GPT-4', 'Claude-2', 'Llama-2', 'GPT-3.5'],
+                datasets: [
+                    {
+                        label: 'Latency (ms)',
+                        data: [342, 412, 587, 278],
+                        backgroundColor: '#8b5cf6'
+                    },
+                    {
+                        label: 'Accuracy (%)',
+                        data: [89.2, 85.7, 78.4, 82.1],
+                        backgroundColor: '#3b82f6',
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: '#e5e7eb'
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#9ca3af'
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#9ca3af'
+                        }
+                    },
+                    y1: {
+                        position: 'right',
+                        grid: {
+                            drawOnChartArea: false,
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#9ca3af',
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Initialize small charts
+        createSmallChart('latencyChart', '#8b5cf6', [300, 320, 350, 370, 340, 360, 330, 310, 320, 340, 350, 342]);
+        createSmallChart('tokenChart', '#3b82f6', [1100, 1150, 1200, 1250, 1300, 1250, 1200, 1150, 1200, 1250, 1300, 1284]);
+        createSmallChart('perplexityChart', '#10b981', [13.2, 13.0, 12.8, 12.6, 12.4, 12.2, 12.0, 12.2, 12.4, 12.3, 12.4, 12.4]);
+        createSmallChart('accuracyChart', '#f59e0b', [88.9, 89.0, 89.1, 89.2, 89.1, 89.0, 89.1, 89.2, 89.1, 89.0, 89.1, 89.2]);
+        createSmallChart('biasChart', '#ef4444', [0.35, 0.36, 0.37, 0.38, 0.39, 0.40, 0.41, 0.42, 0.41, 0.40, 0.41, 0.42]);
+
+        // 3D UMAP Visualization
+        const umapData = {
+            x: Array.from({length: 200}, () => Math.random() * 10 - 5),
+            y: Array.from({length: 200}, () => Math.random() * 10 - 5),
+            z: Array.from({length: 200}, () => Math.random() * 10 - 5),
+            mode: 'markers',
+            type: 'scatter3d',
+            marker: {
+                size: 5,
+                color: Array.from({length: 200}, () => Math.random() > 0.3 ? (Math.random() > 0.7 ? '#10b981' : '#3b82f6') : '#ef4444'),
+                opacity: 0.8
+            }
+        };
+
+        const umapLayout = {
+            margin: {l: 0, r: 0, b: 0, t: 0},
+            paper_bgcolor: 'rgba(31, 41, 55, 0)',
+            plot_bgcolor: 'rgba(31, 41, 55, 0)',
+            scene: {
+                xaxis: {title: 'UMAP1', gridcolor: 'rgba(255,255,255,0.1)', color: '#9ca3af'},
+                yaxis: {title: 'UMAP2', gridcolor: 'rgba(255,255,255,0.1)', color: '#9ca3af'},
+                zaxis: {title: 'UMAP3', gridcolor: 'rgba(255,255,255,0.1)', color: '#9ca3af'},
+                camera: {
+                    eye: {x: 1.5, y: 1.5, z: 0.5}
+                }
+            }
+        };
+
+        Plotly.newPlot('umap-3d', [umapData], umapLayout);
+
+        // Update last updated time
+        function updateLastUpdated() {
+            const now = new Date();
+            document.getElementById('last-updated').textContent = now.toLocaleTimeString();
+        }
+
+        setInterval(updateLastUpdated, 60000);
+        updateLastUpdated();
+
+        // Simulate real-time updates
+        setInterval(() => {
+            // Update performance chart
+            performanceChart.data.datasets[0].data.shift();
+            performanceChart.data.datasets[0].data.push(Math.floor(Math.random() * 800) + 200);
+            performanceChart.data.datasets[1].data.shift();
+            performanceChart.data.datasets[1].data.push(Math.floor(Math.random() * 1200) + 200);
+            performanceChart.update();
+            
+            // Update small charts with slight variations
+            const charts = ['latencyChart', 'tokenChart', 'perplexityChart', 'accuracyChart', 'biasChart'];
+            charts.forEach(id => {
+                const chart = Chart.getChart(id);
+                const lastValue = chart.data.datasets[0].data[chart.data.datasets[0].data.length - 1];
+                const newValue = lastValue * (1 + (Math.random() * 0.04 - 0.02)); // +/- 2%
+                chart.data.datasets[0].data.shift();
+                chart.data.datasets[0].data.push(newValue);
+                chart.update();
+            });
+            
+            // Update the metric numbers
+            const metrics = {
+                'Response Latency': Math.floor(Math.random() * 40) + 320,
+                'Token Usage': Math.floor(Math.random() * 200) + 1200,
+                'Perplexity': (Math.random() * 2 + 11.5).toFixed(1),
+                'Accuracy': (88.5 + Math.random() * 1.5).toFixed(1),
+                'Bias Drift': (0.38 + Math.random() * 0.08).toFixed(2)
+            };
+            
+            Object.entries(metrics).forEach(([metric, value]) => {
+                const element = document.querySelector(`.metric-card:has(div:contains("${metric}")) .text-2xl`);
+                if (element) {
+                    const currentValue = parseFloat(element.textContent.replace(/,/g, ''));
+                    const change = ((value - currentValue) / currentValue * 100).toFixed(1);
+                    
+                    element.textContent = typeof value === 'string' ? value : value.toLocaleString();
+                    
+                    const changeElement = element.parentElement.querySelector('.text-sm');
+                    if (changeElement) {
+                        if (change > 0) {
+                            changeElement.innerHTML = `<i class="fas fa-arrow-up mr-1"></i><span>${Math.abs(change)}% from last update</span>`;
+                            changeElement.className = changeElement.className.replace(/text-(green|yellow|red)-400/, 'text-red-400');
+                        } else if (change < 0) {
+                            changeElement.innerHTML = `<i class="fas fa-arrow-down mr-1"></i><span>${Math.abs(change)}% from last update</span>`;
+                            changeElement.className = changeElement.className.replace(/text-(green|yellow|red)-400/, 'text-green-400');
+                        } else {
+                            changeElement.innerHTML = `<i class="fas fa-minus mr-1"></i><span>0% from last update</span>`;
+                            changeElement.className = changeElement.className.replace(/text-(green|yellow|red)-400/, 'text-yellow-400');
+                        }
+                    }
+                }
+            });
+        }, 5000);
+    </script>
+</body>
+</html>

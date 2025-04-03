@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nimbus Uno LLM Model Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #f0f4ff 0%, #e6f0ff 100%);
+        }
+        .metric-card {
+            transition: all 0.3s ease;
+        }
+        .metric-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .trace-entry:hover {
+            background-color: #f8fafc;
+        }
+        .smooth-transition {
+            transition: all 0.3s ease;
+        }
+        .multiselect-dropdown {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .threshold-input {
+            width: 80px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                <div class="flex items-center">
+                    <div class="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xl">SP</div>
+                    <h1 class="ml-3 text-2xl font-bold text-gray-800">Nimbus Uno - LLM Model Monitor</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="relative">
+                        <select class="block appearance-none bg-white border border-gray-300 text-gray-700 py-2 px-4 pr-8 rounded leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option>Production - GPT-4</option>
+                            <option>Staging - GPT-4</option>
+                            <option>Development - GPT-3.5</option>
+                            <option>Experimental - Claude 2</option>
+                            <option>Research - Llama 2</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <select class="block appearance-none bg-white border border-gray-300 text-gray-700 py-2 px-4 pr-8 rounded leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option>Last 24 hours</option>
+                            <option>Last 7 days</option>
+                            <option>Last 30 days</option>
+                            <option>Custom range</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <button id="alertSettingsBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md flex items-center">
+                            <i class="fas fa-bell mr-2"></i> Alert Settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Alert Settings Modal -->
+        <div id="alertSettingsModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div class="relative top-20 mx-auto p-5 border w-1/2 shadow-lg rounded-md bg-white">
+                <div class="flex justify-between items-center pb-3">
+                    <h3 class="text-xl font-semibold text-gray-800">Alert Threshold Settings</h3>
+                    <button id="closeAlertModal" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="mt-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-500 mb-3">Performance Metrics</h4>
+                            <div class="space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-sm text-gray-700">Latency ></label>
+                                    <div class="flex items-center">
+                                        <input type="number" class="threshold-input border border-gray-300 rounded px-2 py-1 text-sm" value="500">
+                                        <span class="ml-2 text-sm text-gray-500">ms</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <label class="text-sm text-gray-700">Success Rate <</label>
+                                    <div class="flex items-center">
+                                        <input type="number" class="threshold-input border border-gray-300 rounded px-2 py-1 text-sm" value="95">
+                                        <span class="ml-2 text-sm text-gray-500">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-500 mb-3">Quality Metrics</h4>
+                            <div class="space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-sm text-gray-700">Hallucination Rate ></label>
+                                    <div class="flex items-center">
+                                        <input type="number" class="threshold-input border border-gray-300 rounded px-2 py-1 text-sm" value="5">
+                                        <span class="ml-2 text-sm text-gray-500">%</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <label class="text-sm text-gray-700">Toxicity Score ></label>
+                                    <div class="flex items-center">
+                                        <input type="number" class="threshold-input border border-gray-300 rounded px-2 py-1 text-sm" value="0.7" step="0.1">
+                                        <span class="ml-2 text-sm text-gray-500">(0-1)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-500 mb-3">Cost Metrics</h4>
+                            <div class="space-y-4">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-sm text-gray-700">Daily Cost ></label>
+                                    <div class="flex items-center">
+                                        <span class="mr-1 text-sm">$</span>
+                                        <input type="number" class="threshold-input border border-gray-300 rounded px-2 py-1 text-sm" value="1000">
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <label class="text-sm text-gray-700">Token Usage ></label>
+                                    <div class="flex items-center">
+                                        <input type="number" class="threshold-input border border-gray-300 rounded px-2 py-1 text-sm" value="5000">
+                                        <span class="ml-2 text-sm text-gray-500">tokens/req</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-500 mb-3">Notification Settings</h4>
+                            <div class="space-y-4">
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="emailAlerts" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                    <label for="emailAlerts" class="ml-2 block text-sm text-gray-700">Email Alerts</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="slackAlerts" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" checked>
+                                    <label for="slackAlerts" class="ml-2 block text-sm text-gray-700">Slack Alerts</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="smsAlerts" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                    <label for="smsAlerts" class="ml-2 block text-sm text-gray-700">SMS Alerts</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-6 flex justify-end space-x-3">
+                        <button id="cancelAlertSettings" class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200">
+                            Cancel
+                        </button>
+                        <button id="saveAlertSettings" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                            Save Settings
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <!-- Summary Metrics -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="metric-card bg-white rounded-lg shadow p-6 flex items-center">
+                    <div class="p-3 rounded-full bg-blue-100 text-blue-600 mr-4">
+                        <i class="fas fa-bolt text-xl"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium">Avg. Latency</p>
+                        <p class="text-2xl font-bold">342 <span class="text-sm text-gray-500">ms</span></p>
+                        <p class="text-green-500 text-sm flex items-center">
+                            <i class="fas fa-arrow-down mr-1"></i> 12% from yesterday
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="metric-card bg-white rounded-lg shadow p-6 flex items-center">
+                    <div class="p-3 rounded-full bg-purple-100 text-purple-600 mr-4">
+                        <i class="fas fa-dollar-sign text-xl"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium">API Cost</p>
+                        <p class="text-2xl font-bold">$1,248 <span class="text-sm text-gray-500">/day</span></p>
+                        <p class="text-red-500 text-sm flex items-center">
+                            <i class="fas fa-arrow-up mr-1"></i> 8% from yesterday
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="metric-card bg-white rounded-lg shadow p-6 flex items-center">
+                    <div class="p-3 rounded-full bg-yellow-100 text-yellow-600 mr-4">
+                        <i class="fas fa-brain text-xl"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium">Hallucination Rate</p>
+                        <p class="text-2xl font-bold">3.2 <span class="text-sm text-gray-500">%</span></p>
+                        <p class="text-green-500 text-sm flex items-center">
+                            <i class="fas fa-arrow-down mr-1"></i> 5% from yesterday
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="metric-card bg-white rounded-lg shadow p-6 flex items-center">
+                    <div class="p-3 rounded-full bg-red-100 text-red-600 mr-4">
+                        <i class="fas fa-radiation text-xl"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-500 text-sm font-medium">Toxicity Score</p>
+                        <p class="text-2xl font-bold">0.42 <span class="text-sm text-gray-500">/1.0</span></p>
+                        <p class="text-green-500 text-sm flex items-center">
+                            <i class="fas fa-arrow-down mr-1"></i> 15% from yesterday
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metric Selection for Top Chart -->
+            <div class="bg-white rounded-lg shadow p-4 mb-4">
+                <div class="flex flex-wrap items-center gap-4">
+                    <div class="relative">
+                        <button id="metricDropdownBtn" class="flex items-center justify-between px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">
+                            <span>Select Metrics</span>
+                            <i class="fas fa-chevron-down ml-2"></i>
+                        </button>
+                        <div id="metricDropdown" class="hidden absolute z-10 mt-1 w-56 bg-white rounded-md shadow-lg border border-gray-200 multiselect-dropdown">
+                            <div class="p-2">
+                                <div class="flex items-center p-2 rounded hover:bg-gray-100">
+                                    <input type="checkbox" id="latencyMetric" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" checked>
+                                    <label for="latencyMetric" class="ml-2 text-sm text-gray-700">Latency</label>
+                                </div>
+                                <div class="flex items-center p-2 rounded hover:bg-gray-100">
+                                    <input type="checkbox" id="costMetric" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" checked>
+                                    <label for="costMetric" class="ml-2 text-sm text-gray-700">API Cost</label>
+                                </div>
+                                <div class="flex items-center p-2 rounded hover:bg-gray-100">
+                                    <input type="checkbox" id="hallucinationMetric" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                    <label for="hallucinationMetric" class="ml-2 text-sm text-gray-700">Hallucination Rate</label>
+                                </div>
+                                <div class="flex items-center p-2 rounded hover:bg-gray-100">
+                                    <input type="checkbox" id="toxicityMetric" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                    <label for="toxicityMetric" class="ml-2 text-sm text-gray-700">Toxicity Score</label>
+                                </div>
+                                <div class="flex items-center p-2 rounded hover:bg-gray-100">
+                                    <input type="checkbox" id="successMetric" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                    <label for="successMetric" class="ml-2 text-sm text-gray-700">Success Rate</label>
+                                </div>
+                                <div class="flex items-center p-2 rounded hover:bg-gray-100">
+                                    <input type="checkbox" id="tokenMetric" class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                                    <label for="tokenMetric" class="ml-2 text-sm text-gray-700">Token Usage</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center text-sm text-gray-500">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        <span>Select up to 4 metrics to compare</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Time Series Graph -->
+            <div class="bg-white rounded-lg shadow p-6 mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold text-gray-800">Performance Metrics Over Time</h2>
+                    <div class="flex space-x-2">
+                        <button class="px-3 py-1 text-sm bg-indigo-50 text-indigo-600 rounded-md">Hourly</button>
+                        <button class="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded-md">Daily</button>
+                        <button class="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded-md">Weekly</button>
+                    </div>
+                </div>
+                <div class="h-80">
+                    <canvas id="timeSeriesChart1"></canvas>
+                </div>
+            </div>
+
+            <!-- Middle Section - Detailed Metrics -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                <!-- Token Usage -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Token Usage</h3>
+                    <div class="h-64">
+                        <canvas id="tokenUsageChart"></canvas>
+                    </div>
+                    <div class="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-gray-500 text-sm">Avg. Prompt Tokens</p>
+                            <p class="font-semibold">1,245</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 text-sm">Avg. Completion Tokens</p>
+                            <p class="font-semibold">876</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Error Distribution -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Error Distribution</h3>
+                    <div class="h-64">
+                        <canvas id="errorDistributionChart"></canvas>
+                    </div>
+                    <div class="mt-4">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-sm text-gray-600">Rate Limits</span>
+                            <span class="text-sm font-semibold">42%</span>
+                        </div>
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-sm text-gray-600">Timeouts</span>
+                            <span class="text-sm font-semibold">28%</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Content Filter</span>
+                            <span class="text-sm font-semibold">30%</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Toxicity Analysis -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Toxicity Analysis</h3>
+                    <div class="h-64">
+                        <canvas id="toxicityChart"></canvas>
+                    </div>
+                    <div class="mt-4">
+                        <div class="flex items-center">
+                            <div class="w-3 h-3 rounded-full bg-red-500 mr-2"></div>
+                            <span class="text-sm text-gray-600">Explicit Content</span>
+                            <span class="text-sm font-semibold ml-auto">45%</span>
+                        </div>
+                        <div class="flex items-center mt-2">
+                            <div class="w-3 h-3 rounded-full bg-orange-500 mr-2"></div>
+                            <span class="text-sm text-gray-600">Hate Speech</span>
+                            <span class="text-sm font-semibold ml-auto">30%</span>
+                        </div>
+                        <div class="flex items-center mt-2">
+                            <div class="w-3 h-3 rounded-full bg-yellow-500 mr-2"></div>
+                            <span class="text-sm text-gray-600">Harassment</span>
+                            <span class="text-sm font-semibold ml-auto">25%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Time Series Graph -->
+            <div class="bg-white rounded-lg shadow p-6 mb-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold text-gray-800">Quality Metrics Over Time</h2>
+                    <div class="flex space-x-2">
+                        <button class="px-3 py-1 text-sm bg-indigo-50 text-indigo-600 rounded-md">Hallucination</button>
+                        <button class="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded-md">Toxicity</button>
+                        <button class="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded-md">Success Rate</button>
+                    </div>
+                </div>
+                <div class="h-80">
+                    <canvas id="timeSeriesChart2"></canvas>
+                </div>
+            </div>
+
+            <!-- Trace Analyzer Section -->
+            <div class="bg-white rounded-lg shadow overflow-hidden mb-8">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-lg font-semibold text-gray-800">Trace Analyzer</h2>
+                </div>
+                <div class="divide-y divide-gray-200">
+                    <!-- Trace Filter -->
+                    <div class="px-6 py-4 bg-gray-50">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Time Range</label>
+                                <select class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                    <option>Last hour</option>
+                                    <option>Last 6 hours</option>
+                                    <option selected>Last 24 hours</option>
+                                    <option>Last 7 days</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                <select class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                    <option>All</option>
+                                    <option>Success</option>
+                                    <option>Error</option>
+                                    <option>Hallucination</option>
+                                    <option>Toxic</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                                <select class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                                    <option>All</option>
+                                    <option selected>GPT-4</option>
+                                    <option>GPT-3.5</option>
+                                    <option>Claude 2</option>
+                                    <option>Llama 2</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                                <div class="relative">
+                                    <input type="text" placeholder="Search traces..." class="w-full border border-gray-300 rounded-md px-3 py-2 pl-10 text-sm">
+                                    <i class="fas fa-search absolute left-3 top-2.5 text-gray-400"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Trace List -->
+                    <div class="overflow-y-auto max-h-96 custom-scrollbar">
+                        <!-- Trace Entry 1 -->
+                        <div class="trace-entry px-6 py-4 hover:bg-gray-50 cursor-pointer smooth-transition">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center mb-1">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                                        <p class="text-sm font-medium text-gray-900 truncate">User asked about weather patterns in tropical regions</p>
+                                    </div>
+                                    <div class="flex items-center text-xs text-gray-500 space-x-4">
+                                        <span>12:34:45 PM</span>
+                                        <span>342ms</span>
+                                        <span>1,245 tokens</span>
+                                        <span>$0.042</span>
+                                    </div>
+                                </div>
+                                <div class="ml-4 flex-shrink-0">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Success</span>
+                                        <button class="text-gray-400 hover:text-gray-600">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Trace Entry 2 -->
+                        <div class="trace-entry px-6 py-4 hover:bg-gray-50 cursor-pointer smooth-transition">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center mb-1">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-2"></span>
+                                        <p class="text-sm font-medium text-gray-900 truncate">User requested historical facts about ancient Rome</p>
+                                    </div>
+                                    <div class="flex items-center text-xs text-gray-500 space-x-4">
+                                        <span>12:28:12 PM</span>
+                                        <span>521ms</span>
+                                        <span>987 tokens</span>
+                                        <span>$0.035</span>
+                                    </div>
+                                </div>
+                                <div class="ml-4 flex-shrink-0">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">Hallucination</span>
+                                        <button class="text-gray-400 hover:text-gray-600">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Trace Entry 3 -->
+                        <div class="trace-entry px-6 py-4 hover:bg-gray-50 cursor-pointer smooth-transition">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center mb-1">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-2"></span>
+                                        <p class="text-sm font-medium text-gray-900 truncate">User asked for code examples in Python</p>
+                                    </div>
+                                    <div class="flex items-center text-xs text-gray-500 space-x-4">
+                                        <span>12:15:33 PM</span>
+                                        <span>429ms</span>
+                                        <span>1,532 tokens</span>
+                                        <span>$0.052</span>
+                                    </div>
+                                </div>
+                                <div class="ml-4 flex-shrink-0">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Error</span>
+                                        <button class="text-gray-400 hover:text-gray-600">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Trace Entry 4 -->
+                        <div class="trace-entry px-6 py-4 hover:bg-gray-50 cursor-pointer smooth-transition">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center mb-1">
+                                        <span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-2"></span>
+                                        <p class="text-sm font-medium text-gray-900 truncate">User asked about political opinions</p>
+                                    </div>
+                                    <div class="flex items-center text-xs text-gray-500 space-x-4">
+                                        <span>11:42:18 AM</span>
+                                        <span>387ms</span>
+                                        <span>892 tokens</span>
+                                        <span>$0.031</span>
+                                    </div>
+                                </div>
+                                <div class="ml-4 flex-shrink-0">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Toxic</span>
+                                        <button class="text-gray-400 hover:text-gray-600">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trace Detail Panel (hidden by default) -->
+            <div id="traceDetailPanel" class="hidden bg-white rounded-lg shadow mb-8">
+                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                    <h3 class="text-lg font-semibold text-gray-800">Trace Details</h3>
+                    <button id="closeTracePanel" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-500 mb-2">METADATA</h4>
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p class="text-xs text-gray-500">Timestamp</p>
+                                        <p class="text-sm font-medium">2023-06-15 12:28:12 PM</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500">Status</p>
+                                        <p class="text-sm font-medium"><span class="px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 text-xs">Hallucination</span></p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500">Model</p>
+                                        <p class="text-sm font-medium">GPT-4</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500">Latency</p>
+                                        <p class="text-sm font-medium">521ms</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500">Tokens</p>
+                                        <p class="text-sm font-medium">987 (Prompt: 342, Completion: 645)</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500">Cost</p>
+                                        <p class="text-sm font-medium">$0.035</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-gray-500">Toxicity Score</p>
+                                        <p class="text-sm font-medium">0.12</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-500 mb-2">QUALITY ANALYSIS</h4>
+                            <div class="bg-red-50 p-4 rounded-lg">
+                                <div class="flex items-start">
+                                    <div class="flex-shrink-0 mt-1">
+                                        <div class="w-6 h-6 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-600">
+                                            <i class="fas fa-exclamation text-sm"></i>
+                                        </div>
+                                    </div>
+                                    <div class="ml-3">
+                                        <p class="text-sm font-medium text-yellow-800">Factual Inaccuracy Detected</p>
+                                        <p class="text-sm text-yellow-700 mt-1">The response incorrectly stated that Julius Caesar was the first Roman Emperor (he was a dictator; Augustus was the first emperor).</p>
+                                        <p class="text-xs text-yellow-600 mt-2">Confidence: 92%</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-6">
+                        <h4 class="text-sm font-medium text-gray-500 mb-2">PROMPT</h4>
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <p class="text-sm font-mono">Who was the first Roman Emperor and what were his major accomplishments?</p>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-500 mb-2">RESPONSE</h4>
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <p class="text-sm font-mono">The first Roman Emperor was Julius Caesar, who came to power in 27 BCE. His major accomplishments included the conquest of Gaul, the crossing of the Rubicon which led to the Roman Civil War, and the implementation of the Julian calendar. He also initiated significant reforms to Roman government and society before his assassination in 44 BCE.</p>
+                            <div class="mt-3 pt-3 border-t border-gray-200">
+                                <p class="text-xs text-gray-500">Hallucination markers:</p>
+                                <p class="text-xs bg-yellow-100 px-2 py-1 rounded inline-block mt-1">Julius Caesar was not the first emperor (Augustus was)</p>
+                                <p class="text-xs bg-yellow-100 px-2 py-1 rounded inline-block mt-1 ml-1">Incorrect date (Augustus became emperor in 27 BCE)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-white border-t border-gray-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm text-gray-500">Nimbus Uno LLM Model Monitoring Dashboard v2.0</p>
+                    <div class="flex space-x-6">
+                        <a href="#" class="text-gray-400 hover:text-gray-500">
+                            <i class="fab fa-github"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-gray-500">
+                            <i class="fab fa-twitter"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-gray-500">
+                            <i class="fas fa-envelope"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Initialize charts when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Time Series Chart 1 (Latency & Cost)
+            const ctx1 = document.getElementById('timeSeriesChart1').getContext('2d');
+            const timeSeriesChart1 = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+                    datasets: [
+                        {
+                            label: 'Latency (ms)',
+                            data: [320, 310, 305, 315, 325, 340, 350, 360, 355, 345, 335, 330, 325, 320, 315, 310, 305, 300, 295, 290, 285, 280, 275, 270],
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'API Cost ($)',
+                            data: [45, 42, 40, 38, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17],
+                            borderColor: 'rgba(124, 58, 237, 1)',
+                            backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Latency (ms)'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'API Cost ($)'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Token Usage Chart
+            const ctx2 = document.getElementById('tokenUsageChart').getContext('2d');
+            const tokenUsageChart = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: ['Prompt Tokens', 'Completion Tokens', 'Total Tokens'],
+                    datasets: [{
+                        label: 'Average Tokens',
+                        data: [1245, 876, 2121],
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.7)',
+                            'rgba(16, 185, 129, 0.7)',
+                            'rgba(124, 58, 237, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(59, 130, 246, 1)',
+                            'rgba(16, 185, 129, 1)',
+                            'rgba(124, 58, 237, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Tokens'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Error Distribution Chart
+            const ctx3 = document.getElementById('errorDistributionChart').getContext('2d');
+            const errorDistributionChart = new Chart(ctx3, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Rate Limits', 'Timeouts', 'Content Filter'],
+                    datasets: [{
+                        data: [42, 28, 30],
+                        backgroundColor: [
+                            'rgba(239, 68, 68, 0.7)',
+                            'rgba(249, 115, 22, 0.7)',
+                            'rgba(59, 130, 246, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(239, 68, 68, 1)',
+                            'rgba(249, 115, 22, 1)',
+                            'rgba(59, 130, 246, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                        }
+                    }
+                }
+            });
+
+            // Toxicity Chart
+            const ctx4 = document.getElementById('toxicityChart').getContext('2d');
+            const toxicityChart = new Chart(ctx4, {
+                type: 'polarArea',
+                data: {
+                    labels: ['Explicit Content', 'Hate Speech', 'Harassment'],
+                    datasets: [{
+                        data: [45, 30, 25],
+                        backgroundColor: [
+                            'rgba(239, 68, 68, 0.7)',
+                            'rgba(249, 115, 22, 0.7)',
+                            'rgba(234, 179, 8, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(239, 68, 68, 1)',
+                            'rgba(249, 115, 22, 1)',
+                            'rgba(234, 179, 8, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                        }
+                    }
+                }
+            });
+
+            // Time Series Chart 2 (Hallucination & Success Rate)
+            const ctx5 = document.getElementById('timeSeriesChart2').getContext('2d');
+            const timeSeriesChart2 = new Chart(ctx5, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+                    datasets: [
+                        {
+                            label: 'Hallucination Rate (%)',
+                            data: [3.5, 3.4, 3.3, 3.2, 3.1, 3.0, 2.9, 2.8, 2.7, 2.6, 2.5, 2.4, 2.3, 2.2, 2.1, 2.0, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2],
+                            borderColor: 'rgba(239, 68, 68, 1)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Toxicity Score',
+                            data: [0.45, 0.44, 0.43, 0.42, 0.41, 0.40, 0.39, 0.38, 0.37, 0.36, 0.35, 0.34, 0.33, 0.32, 0.31, 0.30, 0.29, 0.28, 0.27, 0.26, 0.25, 0.24, 0.23, 0.22],
+                            borderColor: 'rgba(249, 115, 22, 1)',
+                            backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: true,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            min: 0,
+                            max: 5,
+                            title: {
+                                display: true,
+                                text: 'Hallucination Rate (%)'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            min: 0,
+                            max: 1,
+                            title: {
+                                display: true,
+                                text: 'Toxicity Score (0-1)'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Trace analyzer interactions
+            const traceEntries = document.querySelectorAll('.trace-entry');
+            const traceDetailPanel = document.getElementById('traceDetailPanel');
+            const closeTracePanel = document.getElementById('closeTracePanel');
+
+            traceEntries.forEach(entry => {
+                entry.addEventListener('click', () => {
+                    traceDetailPanel.classList.remove('hidden');
+                    // Scroll to the panel
+                    traceDetailPanel.scrollIntoView({ behavior: 'smooth' });
+                });
+            });
+
+            closeTracePanel.addEventListener('click', () => {
+                traceDetailPanel.classList.add('hidden');
+            });
+
+            // Metric selection dropdown
+            const metricDropdownBtn = document.getElementById('metricDropdownBtn');
+            const metricDropdown = document.getElementById('metricDropdown');
+
+            metricDropdownBtn.addEventListener('click', () => {
+                metricDropdown.classList.toggle('hidden');
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (event) => {
+                if (!metricDropdownBtn.contains(event.target) && !metricDropdown.contains(event.target)) {
+                    metricDropdown.classList.add('hidden');
+                }
+            });
+
+            // Alert settings modal
+            const alertSettingsBtn = document.getElementById('alertSettingsBtn');
+            const alertSettingsModal = document.getElementById('alertSettingsModal');
+            const closeAlertModal = document.getElementById('closeAlertModal');
+            const cancelAlertSettings = document.getElementById('cancelAlertSettings');
+            const saveAlertSettings = document.getElementById('saveAlertSettings');
+
+            alertSettingsBtn.addEventListener('click', () => {
+                alertSettingsModal.classList.remove('hidden');
+            });
+
+            closeAlertModal.addEventListener('click', () => {
+                alertSettingsModal.classList.add('hidden');
+            });
+
+            cancelAlertSettings.addEventListener('click', () => {
+                alertSettingsModal.classList.add('hidden');
+            });
+
+            saveAlertSettings.addEventListener('click', () => {
+                alertSettingsModal.classList.add('hidden');
+                // Here you would typically save the settings to your backend
+                alert('Alert settings saved successfully!');
+            });
+
+            // Close modal when clicking outside
+            document.addEventListener('click', (event) => {
+                if (event.target === alertSettingsModal) {
+                    alertSettingsModal.classList.add('hidden');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
